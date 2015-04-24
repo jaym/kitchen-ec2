@@ -16,18 +16,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-require 'excon'
-require 'multi_json'
-require 'json'
-require 'net/http'
-require 'timeout'
+require "excon"
+require "json"
+require "net/http"
+require "timeout"
+require "time"
+require "English"
 
 module Kitchen
   module EC2
+    # This class exists to fetch IAM credentials from the metadata service
+    # when ran from within an existing EC2 host.  The use case is that
+    # you have a CI system running test-kitchen and the CI exists
+    # entirely within AWS.
     class IamCredentialsFetcher
 
-      INSTANCE_METADATA_HOST = 'http://169.254.169.254'
-      INSTANCE_METADATA_PATH = '/latest/meta-data/iam/security-credentials/'
+      INSTANCE_METADATA_HOST = "http://169.254.169.254"
+      INSTANCE_METADATA_PATH = "/latest/meta-data/iam/security-credentials/"
+
+      attr_reader :logger
+
+      def initialize(logger)
+        @logger = logger
+      end
 
       # First we check the existence of the metadata host.  Only fetch_credentials
       # if we can find the host.
@@ -38,8 +49,9 @@ module Kitchen
           end
           fetch_credentials
         rescue Errno::EHOSTUNREACH, Errno::EHOSTDOWN, Timeout::Error,
-          NoMethodError, ::StandardError => e
-          debug("fetch_credentials failed with exception #{e.message}:#{e.backtrace.join("\n")}")
+               NoMethodError, ::StandardError
+          logger.debug "iam_creds failed with exception #{$ERROR_INFO.message}:" \
+            "#{$ERROR_POSITION.join("\n")}"
           {}
         end
       end
@@ -53,16 +65,16 @@ module Kitchen
           :path => INSTANCE_METADATA_PATH, :expects => 200
         ).body
         role_data = connection.get(
-          :path => INSTANCE_METADATA_PATH+role_name, :expects => 200
+          :path => INSTANCE_METADATA_PATH + role_name, :expects => 200
         ).body
 
-        session = MultiJson.load(role_data)
+        session = JSON.parse(role_data)
         credentials = {}
-        credentials[:aws_access_key_id] = session['AccessKeyId']
-        credentials[:aws_secret_access_key] = session['SecretAccessKey']
-        credentials[:aws_session_token] = session['Token']
-        credentials[:aws_credentials_expire_at] = Time.xmlschema session['Expiration']
-        #these indicate the metadata service is unavailable or has no profile setup
+        credentials[:aws_access_key_id] = session["AccessKeyId"]
+        credentials[:aws_secret_access_key] = session["SecretAccessKey"]
+        credentials[:aws_session_token] = session["Token"]
+        credentials[:aws_credentials_expire_at] = Time.xmlschema session["Expiration"]
+        # these indicate the metadata service is unavailable or has no profile setup
         credentials
       end
     end
