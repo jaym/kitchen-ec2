@@ -22,6 +22,7 @@ require "aws"
 require "retryable"
 require "kitchen"
 require "kitchen/driver/ec2_version"
+require "kitchen/ec2/iam_credentials_fetcher"
 
 module Kitchen
 
@@ -191,6 +192,7 @@ module Kitchen
         info("EC2 instance <#{state[:server_id]}> ready.")
         state[:hostname] = hostname(server)
         instance.transport.connection(state).wait_until_ready
+        create_ec2_json(state)
         debug("ec2:create '#{state[:hostname]}'")
       end
 
@@ -240,13 +242,13 @@ module Kitchen
         env
       end
 
-      def iam_credentials_fetcher
+      def fetcher
         @fetcher ||= Kitchen::EC2::IamCredentialsFetcher.new(logger)
       end
 
       # Simple delegate to the iam credentials fetcher
       def iam_creds
-        @fetcher.iam_creds
+        fetcher.iam_creds
       end
 
       private
@@ -486,6 +488,12 @@ module Kitchen
           :sleep => config[:retryable_sleep],
           :on => TimeoutError,
           &block
+        )
+      end
+
+      def create_ec2_json(state)
+        instance.transport.connection(state).execute(
+          "sudo mkdir -p /etc/chef/ohai/hints;sudo touch /etc/chef/ohai/hints/ec2.json"
         )
       end
 
